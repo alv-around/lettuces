@@ -1,14 +1,16 @@
+use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Rem, Sub};
 
 // Kyber Setup
-#[derive(PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct KyberParams;
 
 // INFO: source: https://eprint.iacr.org/2017/634.pdf
 impl FieldParams for KyberParams {
     type Repr = u16;
     const MODULUS: u16 = 7681;
+    const ZERO: u16 = 0;
 
     fn mul_reduce(lhs: u16, rhs: u16) -> u16 {
         let intermediate = (lhs as u32) * (rhs as u32);
@@ -18,13 +20,14 @@ impl FieldParams for KyberParams {
 }
 
 // Dilithium Setup
-#[derive(PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DlithiumParams;
 
 // INFO: source: https://eprint.iacr.org/2017/633.pdf
 impl FieldParams for DlithiumParams {
     type Repr = u32;
     const MODULUS: u32 = 8380417;
+    const ZERO: u32 = 0;
 
     fn mul_reduce(lhs: u32, rhs: u32) -> u32 {
         let intermediate = (lhs as u64) * (rhs as u64);
@@ -39,14 +42,15 @@ pub type DlithiumFp = FiniteField<DlithiumParams>;
 
 pub trait FieldParams {
     /// The underlying storage type (e.g., u16, u32)
-    type Repr: Copy + Default + PartialOrd;
+    type Repr: Copy + Debug + Default + PartialOrd;
     /// The prime modulus (Q)
     const MODULUS: Self::Repr;
+    const ZERO: Self::Repr;
 
     fn mul_reduce(lhs: Self::Repr, rhs: Self::Repr) -> Self::Repr;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct FiniteField<P: FieldParams> {
     value: P::Repr,
     _marker: PhantomData<P>,
@@ -70,7 +74,12 @@ where
         Self::new(q - i)
     }
 
-    // TODO: create const constructor new(0) and new(1)
+    pub const fn zero() -> Self {
+        Self {
+            value: P::ZERO,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<P: FieldParams> Add for FiniteField<P>
@@ -108,10 +117,19 @@ where
     }
 }
 
+// Manually implement Clone
+impl<P: FieldParams> Clone for FiniteField<P> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+// Manually implement Copy
+impl<P: FieldParams> Copy for FiniteField<P> {}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    extern crate std;
     use rand::random_range;
 
     const KYBER_Q: u16 = KyberParams::MODULUS;
