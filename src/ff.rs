@@ -1,135 +1,191 @@
-use core::ops::{Add, Mul};
+use core::marker::PhantomData;
+use core::ops::{Add, Mul, Rem, Sub};
+
+// Kyber Setup
+#[derive(PartialEq)]
+pub struct KyberParams;
 
 // INFO: source: https://eprint.iacr.org/2017/634.pdf
-const KYBER_Q: u32 = 7681; // TODO: support u16
+impl FieldParams for KyberParams {
+    type Repr = u16;
+    const MODULUS: u16 = 7681;
+
+    fn mul_reduce(lhs: u16, rhs: u16) -> u16 {
+        let intermediate = (lhs as u32) * (rhs as u32);
+        let reduced = intermediate % (Self::MODULUS as u32);
+        reduced as u16
+    }
+}
+
+// Dilithium Setup
+#[derive(PartialEq)]
+pub struct DlithiumParams;
+
 // INFO: source: https://eprint.iacr.org/2017/633.pdf
-const DLITHIUM_Q: u32 = 8380417;
+impl FieldParams for DlithiumParams {
+    type Repr = u32;
+    const MODULUS: u32 = 8380417;
 
-pub struct FiniteField<const Q: u32>(u32);
-
-impl<const Q: u32> FiniteField<Q> {
-    pub fn new(x: u32) -> Self {
-        Self(x % Q)
-    }
-
-    pub fn minus(x: u32) -> Self {
-        let i = x % Q;
-        Self(Q - i)
-    }
-
-    pub fn zero() -> Self {
-        FiniteField::new(0)
-    }
-
-    pub fn one() -> Self {
-        FiniteField::new(1)
+    fn mul_reduce(lhs: u32, rhs: u32) -> u32 {
+        let intermediate = (lhs as u64) * (rhs as u64);
+        let reduced = intermediate % (Self::MODULUS as u64);
+        reduced as u32
     }
 }
 
-impl<const Q: u32> PartialEq for FiniteField<Q> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
+// Fps
+pub type KyberFp = FiniteField<KyberParams>;
+pub type DlithiumFp = FiniteField<DlithiumParams>;
+
+pub trait FieldParams {
+    /// The underlying storage type (e.g., u16, u32)
+    type Repr: Copy + Default + PartialOrd;
+    /// The prime modulus (Q)
+    const MODULUS: Self::Repr;
+
+    fn mul_reduce(lhs: Self::Repr, rhs: Self::Repr) -> Self::Repr;
 }
 
-#[allow(clippy::suspicious_arithmetic_impl)]
-impl<const Q: u32> Add for FiniteField<Q> {
-    type Output = FiniteField<Q>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FiniteField<P: FieldParams> {
+    value: P::Repr,
+    _marker: PhantomData<P>,
+}
 
-    // strict because we know sofar that no sum of 2 Fields would overflow.
-    // Kyber & Dlitiums qs are far from 2^32
+impl<P: FieldParams> FiniteField<P>
+where
+    P::Repr: Rem<Output = P::Repr> + Sub<Output = P::Repr>,
+{
+    pub fn new(x: P::Repr) -> Self {
+        let value = x % P::MODULUS as P::Repr;
+        Self {
+            value,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn minus(x: P::Repr) -> Self {
+        let q = P::MODULUS as P::Repr;
+        let i = x % q;
+        Self::new(q - i)
+    }
+
+    // TODO: create const constructor new(0) and new(1)
+}
+
+impl<P: FieldParams> Add for FiniteField<P>
+where
+    P::Repr: Add<Output = P::Repr> + PartialOrd + Sub<Output = P::Repr>,
+{
+    type Output = Self;
+
     fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0.strict_add(rhs.0) % Q)
+        let mut sum = self.value + rhs.value;
+        if sum >= P::MODULUS {
+            sum = sum - P::MODULUS;
+        }
+
+        Self {
+            value: sum,
+            _marker: PhantomData,
+        }
     }
 }
 
-#[allow(clippy::suspicious_arithmetic_impl)]
-impl<const Q: u32> Mul for FiniteField<Q> {
-    type Output = FiniteField<Q>;
+impl<P: FieldParams> Mul for FiniteField<P>
+where
+    P::Repr: PartialOrd,
+{
+    type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mult_expanded = (self.0 as u64).strict_mul(rhs.0 as u64);
-        let mod_mult = mult_expanded % (Q as u64);
-        Self(mod_mult as u32)
+        let value = P::mul_reduce(self.value, rhs.value);
+
+        Self {
+            value,
+            _marker: PhantomData,
+        }
     }
 }
-
-pub type KyberFf = FiniteField<KYBER_Q>;
-pub type DlithiumFf = FiniteField<DLITHIUM_Q>;
 
 #[cfg(test)]
 mod test {
     use super::*;
+    extern crate std;
     use rand::random_range;
+
+    const KYBER_Q: u16 = KyberParams::MODULUS;
+    const DLITHIUM_Q: u32 = DlithiumParams::MODULUS;
 
     #[test]
     fn test_field_wrapping() {
+        assert!(KYBER_Q < i16::MAX as u16);
         assert!(DLITHIUM_Q < i32::MAX as u32);
 
         //zero
-        assert!(KyberFf::new(KYBER_Q) == KyberFf::zero());
-        assert!(DlithiumFf::new(DLITHIUM_Q) == DlithiumFf::zero());
+        assert!(KyberFp::new(KYBER_Q) == KyberFp::new(0));
+        assert!(DlithiumFp::new(DLITHIUM_Q) == DlithiumFp::new(0));
 
         // one
-        assert!(KyberFf::new(KYBER_Q + 1) == KyberFf::one());
-        assert!(DlithiumFf::new(DLITHIUM_Q + 1) == DlithiumFf::one());
+        assert!(KyberFp::new(KYBER_Q + 1) == KyberFp::new(1));
+        assert!(DlithiumFp::new(DLITHIUM_Q + 1) == DlithiumFp::new(1));
 
-        // minus
-        assert!(KyberFf::new(KYBER_Q - 1) == KyberFf::minus(1));
-        assert!(DlithiumFf::new(DLITHIUM_Q - 1) == DlithiumFf::minus(1));
-        assert!(KyberFf::minus(KYBER_Q + 1) == KyberFf::minus(1));
-        assert!(DlithiumFf::minus(DLITHIUM_Q + 1) == DlithiumFf::minus(1));
+        // // minus
+        assert!(KyberFp::new(KYBER_Q - 1) == KyberFp::minus(1));
+        assert!(DlithiumFp::new(DLITHIUM_Q - 1) == DlithiumFp::minus(1));
+        assert!(KyberFp::minus(KYBER_Q + 1) == KyberFp::minus(1));
+        assert!(DlithiumFp::minus(DLITHIUM_Q + 1) == DlithiumFp::minus(1));
     }
 
     #[test]
     fn test_field_addition() {
         // addition
-        assert!(KyberFf::one() + KyberFf::new(1) == KyberFf::new(2));
-        assert!(KyberFf::minus(1) + KyberFf::one() == KyberFf::zero());
-        assert!(DlithiumFf::one() + DlithiumFf::new(1) == DlithiumFf::new(2));
-        assert!(DlithiumFf::minus(1) + DlithiumFf::one() == DlithiumFf::zero());
-        assert!(KyberFf::minus(1) + KyberFf::new(2) == KyberFf::one());
-        assert!(DlithiumFf::minus(1) + DlithiumFf::new(2) == DlithiumFf::one());
-        assert!(KyberFf::new(2) + KyberFf::new(7) == KyberFf::new(9));
-        assert!(DlithiumFf::new(2) + DlithiumFf::new(7) == DlithiumFf::new(9));
+        assert!(KyberFp::new(1) + KyberFp::new(1) == KyberFp::new(2));
+        assert!(KyberFp::minus(1) + KyberFp::new(1) == KyberFp::new(0));
+        assert!(DlithiumFp::new(1) + DlithiumFp::new(1) == DlithiumFp::new(2));
+        assert!(DlithiumFp::minus(1) + DlithiumFp::new(1) == DlithiumFp::new(0));
+        assert!(KyberFp::minus(1) + KyberFp::new(2) == KyberFp::new(1));
+        assert!(DlithiumFp::minus(1) + DlithiumFp::new(2) == DlithiumFp::new(1));
+        assert!(KyberFp::new(2) + KyberFp::new(7) == KyberFp::new(9));
+        assert!(DlithiumFp::new(2) + DlithiumFp::new(7) == DlithiumFp::new(9));
 
         // Addition by neutral element
-        assert!(KyberFf::new(11) + KyberFf::zero() == KyberFf::new(11));
-        assert!(DlithiumFf::new(11) + DlithiumFf::zero() == DlithiumFf::new(11));
+        assert!(KyberFp::new(11) + KyberFp::new(0) == KyberFp::new(11));
+        assert!(DlithiumFp::new(11) + DlithiumFp::new(0) == DlithiumFp::new(11));
 
         // use random numbers
         let a = random_range(0..=KYBER_Q);
         let b = random_range(0..=KYBER_Q);
         let c = a + b;
-        assert!(KyberFf::new(a) + KyberFf::new(b) == KyberFf::new(c));
+        assert!(KyberFp::new(a) + KyberFp::new(b) == KyberFp::new(c));
         let a = random_range(0..=DLITHIUM_Q);
         let b = random_range(0..=DLITHIUM_Q);
         let c = a + b;
-        assert!(DlithiumFf::new(a) + DlithiumFf::new(b) == DlithiumFf::new(c));
+        assert!(DlithiumFp::new(a) + DlithiumFp::new(b) == DlithiumFp::new(c));
 
         // substraction
-        assert!(KyberFf::one() + KyberFf::minus(1) == KyberFf::zero());
-        assert!(DlithiumFf::one() + DlithiumFf::minus(1) == DlithiumFf::zero());
+        assert!(KyberFp::new(1) + KyberFp::minus(1) == KyberFp::new(0));
+        assert!(DlithiumFp::new(1) + DlithiumFp::minus(1) == DlithiumFp::new(0));
     }
 
     #[test]
     fn test_field_multiplication() {
         // multiply by 0
-        assert!(KyberFf::new(17) * KyberFf::zero() == KyberFf::zero());
-        assert!(DlithiumFf::new(17) * DlithiumFf::zero() == DlithiumFf::zero());
+        assert!(KyberFp::new(17) * KyberFp::new(0) == KyberFp::new(0));
+        assert!(DlithiumFp::new(17) * DlithiumFp::new(0) == DlithiumFp::new(0));
 
         // multiply by 1
-        assert!(KyberFf::new(17) * KyberFf::one() == KyberFf::new(17));
-        assert!(DlithiumFf::new(17) * DlithiumFf::one() == DlithiumFf::new(17));
+        assert!(KyberFp::new(17) * KyberFp::new(1) == KyberFp::new(17));
+        assert!(DlithiumFp::new(17) * DlithiumFp::new(1) == DlithiumFp::new(17));
 
         // use random numbers
-        let a = random_range(0..=KYBER_Q) as u64;
-        let b = random_range(0..=KYBER_Q) as u64;
-        let c = (a * b) % (KYBER_Q as u64);
-        assert!(KyberFf::new(a as u32) * KyberFf::new(b as u32) == KyberFf::new(c as u32));
-        let a = random_range(0..=DLITHIUM_Q) as u64;
-        let b = random_range(0..=DLITHIUM_Q) as u64;
-        let c = (a * b) % (DLITHIUM_Q as u64);
-        assert!(DlithiumFf::new(a as u32) * DlithiumFf::new(b as u32) == DlithiumFf::new(c as u32));
+        let a = random_range(0..=KYBER_Q);
+        let b = random_range(0..=KYBER_Q);
+        let c = (a as u32 * b as u32) % KYBER_Q as u32;
+        assert!(KyberFp::new(a) * KyberFp::new(b) == KyberFp::new(c.try_into().unwrap()));
+        let a = random_range(0..=DLITHIUM_Q);
+        let b = random_range(0..=DLITHIUM_Q);
+        let c = (a as u64 * b as u64) % DLITHIUM_Q as u64;
+        assert!(DlithiumFp::new(a) * DlithiumFp::new(b) == DlithiumFp::new(c.try_into().unwrap()));
     }
 }

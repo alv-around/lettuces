@@ -1,28 +1,25 @@
-use crate::ff::FiniteField;
+use crate::ff::{FieldParams, FiniteField};
+use core::ops::{Rem, Sub};
 
-pub struct Vector<const N: usize>([FiniteField; N]);
+pub struct Vector<const N: usize, P: FieldParams>([FiniteField<P>; N]);
 
-impl<const N: usize> Vector<N> {
-    pub fn new<const Q: u32>(values: [FiniteField<Q>; N]) -> Self {
+impl<const N: usize, P: FieldParams> Vector<N, P>
+where
+    P: FieldParams,
+    P::Repr: Rem<Output = P::Repr> + Sub<Output = P::Repr>,
+{
+    pub fn new(values: [FiniteField<P>; N]) -> Self {
         Self(values)
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        assert!(bytes.len() % 4 == N);
-        let mut fields = [FiniteField::zero(); N];
-        for (i, chunk) in bytes.chunks(4).enumerate() {
-            let bytes: [u8; 4] = chunk.try_into().unwrap();
-            let value = u32::from_be_bytes(bytes);
-            fields[i] = FiniteField::new(value);
-        }
-        Self(fields)
     }
 }
 
-impl<const N: usize> PartialEq for Vector<N> {
+impl<const N: usize, P> PartialEq for Vector<N, P>
+where
+    P: FieldParams + PartialEq,
+{
     fn eq(&self, other: &Self) -> bool {
-        for (a, b) in self.0.iter().zip(other.0) {
-            if *a != b {
+        for (a, b) in self.0.iter().zip(&other.0) {
+            if *a != *b {
                 return false;
             }
         }
@@ -33,11 +30,10 @@ impl<const N: usize> PartialEq for Vector<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ff::KyberFf;
+    use crate::ff::KyberParams;
 
     #[test]
-    fn test_vector_from_bytes() {
-        let zero = [0u8, 0u8, 0u8, 0u8];
-        let f_zero = Vector::<1>::from_bytes(&zero);
+    fn test_vector_equality() {
+        todo!("assert vector equality!");
     }
 }
