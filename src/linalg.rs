@@ -1,13 +1,21 @@
-use crate::ff::{FieldParams, FiniteField};
-use core::ops::{Add, Rem, Sub};
+use rand::{
+    Rng,
+    distr::{Distribution, StandardUniform},
+};
 
-#[derive(Debug)]
+use crate::ff::{FieldParams, FiniteField};
+use core::ops::{Add, Mul, Rem, Sub};
+
+#[derive(Debug, Clone, Copy)]
 pub struct Vector<const N: usize, P: FieldParams>([FiniteField<P>; N]);
+
+pub type Matrix<const N: usize, P> = [Vector<N, P>; N];
 
 impl<const N: usize, P: FieldParams> Vector<N, P>
 where
     P: FieldParams,
     P::Repr: Rem<Output = P::Repr> + Add<Output = P::Repr> + Sub<Output = P::Repr>,
+    StandardUniform: Distribution<FiniteField<P>>,
 {
     pub const fn new(values: [FiniteField<P>; N]) -> Self {
         Self(values)
@@ -17,6 +25,14 @@ where
         for field in self.0.iter_mut() {
             *field = *field + x;
         }
+    }
+
+    pub fn random<R: Rng>(rng: &mut R) -> Self {
+        let mut rand_vals = [FiniteField::<P>::zero(); N];
+        for val in rand_vals.iter_mut() {
+            *val = rng.random();
+        }
+        Self(rand_vals)
     }
 }
 
@@ -48,6 +64,25 @@ where
             array[i] = a + b;
         }
         Self(array)
+    }
+}
+
+impl<const N: usize, P> Mul for Vector<N, P>
+where
+    P: FieldParams + PartialEq + Copy,
+    P::Repr: Add<Output = P::Repr>
+        + Mul<Output = P::Repr>
+        + Rem<Output = P::Repr>
+        + Sub<Output = P::Repr>,
+{
+    type Output = FiniteField<P>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut dot_product = FiniteField::<_>::zero();
+        for i in 0..N {
+            dot_product = dot_product + self.0[i] * rhs.0[i]
+        }
+        dot_product
     }
 }
 
@@ -96,5 +131,13 @@ mod tests {
         let mut ones = Vector::new(ZEROES);
         ones.add_scalar(KyberFp::new(1));
         assert_eq!(ones, Vector::new([KyberFp::new(1); 4]));
+    }
+
+    #[test]
+    fn test_vector_dot_product() {
+        let basis_vector_1 = Vector::new([KyberFp::new(1), KyberFp::zero()]);
+        let basis_vector_2 = Vector::new([KyberFp::zero(), KyberFp::new(1)]);
+
+        assert_eq!(basis_vector_1 * basis_vector_2, KyberFp::zero());
     }
 }
