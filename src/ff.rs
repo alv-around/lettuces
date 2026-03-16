@@ -1,6 +1,8 @@
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Rem, Sub};
+use rand::Rng;
+use rand::distr::{Distribution, StandardUniform};
 
 // Kyber Setup
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -117,20 +119,32 @@ where
     }
 }
 
-// Manually implement Clone
+// Silence compiler by manually implement Clone
 impl<P: FieldParams> Clone for FiniteField<P> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-// Manually implement Copy
+// Silence compiler by manually implement Copy
 impl<P: FieldParams> Copy for FiniteField<P> {}
+
+// drawn random field
+impl<P: FieldParams> Distribution<FiniteField<P>> for StandardUniform
+where
+    StandardUniform: Distribution<P::Repr>,
+    P::Repr: PartialOrd + Rem<Output = P::Repr> + Sub<Output = P::Repr>,
+{
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> FiniteField<P> {
+        let val: P::Repr = rng.random();
+        FiniteField::new(val)
+    }
+}
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use rand::random_range;
+    use rand::{SeedableRng, random_range, rngs::SmallRng};
 
     const KYBER_Q: u16 = KyberParams::MODULUS;
     const DLITHIUM_Q: u32 = DlithiumParams::MODULUS;
@@ -205,5 +219,13 @@ mod test {
         let b = random_range(0..=DLITHIUM_Q);
         let c = (a as u64 * b as u64) % DLITHIUM_Q as u64;
         assert!(DlithiumFp::new(a) * DlithiumFp::new(b) == DlithiumFp::new(c.try_into().unwrap()));
+    }
+
+    #[test]
+    fn test_field_sample() {
+        let mut rng = SmallRng::from_seed([0u8; 32]);
+
+        let _x: KyberFp = rng.random();
+        let _y: DlithiumFp = rng.random();
     }
 }
