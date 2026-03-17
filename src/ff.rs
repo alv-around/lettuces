@@ -1,4 +1,4 @@
-use core::fmt::Debug;
+use core::fmt;
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Rem, Sub};
 use rand::Rng;
@@ -44,7 +44,7 @@ pub type DlithiumFp = FiniteField<DlithiumParams>;
 
 pub trait FieldParams {
     /// The underlying storage type (e.g., u16, u32)
-    type Repr: Copy + Debug + Default + PartialOrd;
+    type Repr: Copy + fmt::Debug + Default + PartialOrd;
     /// The prime modulus (Q)
     const MODULUS: Self::Repr;
     const ZERO: Self::Repr;

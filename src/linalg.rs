@@ -1,25 +1,14 @@
+use core::fmt;
+use core::ops::{Add, Mul, Rem, Sub};
 use rand::{
     Rng,
     distr::{Distribution, StandardUniform},
 };
 
 use crate::ff::{FieldParams, FiniteField};
-use core::ops::{Add, Mul, Rem, Sub};
 
 #[derive(Clone, Copy)]
 pub struct Vector<const N: usize, P: FieldParams>(pub [FiniteField<P>; N]);
-
-pub struct Matrix<const N: usize, P: FieldParams>(pub [Vector<N, P>; N]);
-
-impl<const N: usize, P: FieldParams> fmt::Debug for Matrix<N, P> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "[")?;
-        for vec in self.0.iter() {
-            writeln!(f, "{:?}", vec)?
-        }
-        writeln!(f, "]")
-    }
-}
 
 impl<const N: usize, P: FieldParams> fmt::Debug for Vector<N, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -33,8 +22,8 @@ where
     P::Repr: Rem<Output = P::Repr> + Add<Output = P::Repr> + Sub<Output = P::Repr>,
     StandardUniform: Distribution<FiniteField<P>>,
 {
-    pub const fn new(values: [FiniteField<P>; N]) -> Self {
-        Self(values)
+    pub fn new(values: [P::Repr; N]) -> Self {
+        Self(values.map(|v| FiniteField::new(v)))
     }
 
     pub fn add_scalar(&mut self, x: FiniteField<P>) {
@@ -102,57 +91,66 @@ where
     }
 }
 
+pub struct Matrix<const N: usize, P: FieldParams>(pub [Vector<N, P>; N]);
+
+impl<const N: usize, P: FieldParams> fmt::Debug for Matrix<N, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "[")?;
+        for vec in self.0.iter() {
+            writeln!(f, "{:?}", vec)?
+        }
+        writeln!(f, "]")
+    }
+}
+
+impl<const N: usize, P: FieldParams> Matrix<N, P>
+where
+    P: FieldParams + PartialEq + Copy,
+    P::Repr: Add<Output = P::Repr> + Sub<Output = P::Repr> + Rem<Output = P::Repr>,
+    StandardUniform: Distribution<FiniteField<P>>,
+{
+    pub fn random<R: Rng>(rng: &mut R) -> Self {
+        let mut key = [Vector([FiniteField::zero(); N]); N];
+        for coeffs in key.iter_mut() {
+            *coeffs = Vector::random(rng);
+        }
+        Matrix(key)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ff::{KyberFp, KyberParams};
 
     const ZEROES: [KyberFp; 4] = [KyberFp::zero(); 4];
-    const KYBER_V: Vector<4, KyberParams> = Vector::new(ZEROES);
+    const KYBER_V: Vector<4, KyberParams> = Vector(ZEROES);
 
     #[test]
     fn test_vector() {
-        assert!(KYBER_V == Vector::new([KyberFp::new(0); 4]));
-        assert_ne!(KYBER_V, Vector::new([KyberFp::new(1); 4]));
+        assert!(KYBER_V == Vector::new([0; 4]));
+        assert_ne!(KYBER_V, Vector::new([1; 4]));
     }
 
     #[test]
     fn test_vector_addition() {
-        let array = Vector::new([
-            KyberFp::new(1),
-            KyberFp::new(2),
-            KyberFp::new(3),
-            KyberFp::new(4),
-        ]);
-        let array_rev = Vector::new([
-            KyberFp::minus(4),
-            KyberFp::minus(3),
-            KyberFp::minus(2),
-            KyberFp::minus(1),
-        ]);
+        let array: Vector<4, KyberParams> = Vector::new([1, 2, 3, 4]);
+        let array_rev: Vector<_, KyberParams> = Vector::new([4, 3, 2, 1]);
         let sum = array + array_rev;
-        assert_eq!(
-            sum,
-            Vector::new([
-                KyberFp::minus(3),
-                KyberFp::minus(1),
-                KyberFp::new(1),
-                KyberFp::new(3)
-            ])
-        );
+        assert_eq!(sum, Vector::new([3, 1, 3, 1]));
     }
 
     #[test]
     fn test_vector_scalar_addition() {
-        let mut ones = Vector::new(ZEROES);
+        let mut ones = Vector(ZEROES);
         ones.add_scalar(KyberFp::new(1));
-        assert_eq!(ones, Vector::new([KyberFp::new(1); 4]));
+        assert_eq!(ones, Vector::new([1, 1, 1, 1]));
     }
 
     #[test]
     fn test_vector_dot_product() {
-        let basis_vector_1 = Vector::new([KyberFp::new(1), KyberFp::zero()]);
-        let basis_vector_2 = Vector::new([KyberFp::zero(), KyberFp::new(1)]);
+        let basis_vector_1 = Vector::new([1, 0]);
+        let basis_vector_2 = Vector::new([0, 1]);
 
         assert_eq!(basis_vector_1 * basis_vector_2, KyberFp::zero());
     }

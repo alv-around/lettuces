@@ -1,12 +1,16 @@
-use lettuces::{ff::KyberParams, ml_kem::MlKem};
+use lettuces::{
+    ff::KyberParams,
+    linalg::{Matrix, Vector},
+};
 use rand::{SeedableRng, rngs::SmallRng};
 
 fn main() {
-    println!("generating key");
     let mut rng = SmallRng::from_seed([0u8; 32]);
-    let ml_kem_key = MlKem::<8, KyberParams>::keygen(&mut rng);
-    println!("generated key: {:?}", ml_kem_key);
+    let _A: Matrix<8, KyberParams> = Matrix::random(&mut rng);
 
-    println!("MISSING: encrypt key");
-    println!("MISSING: decrypt key");
+    println!("generating key for Alice");
+    let _s: Vector<8, KyberParams> = Vector::random(&mut rng);
+
+    println!("generating key for Bob");
+    let _r: Vector<8, KyberParams> = Vector::random(&mut rng);
 }
