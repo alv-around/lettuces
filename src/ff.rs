@@ -52,10 +52,16 @@ pub trait FieldParams {
     fn mul_reduce(lhs: Self::Repr, rhs: Self::Repr) -> Self::Repr;
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq)]
 pub struct FiniteField<P: FieldParams> {
     value: P::Repr,
     _marker: PhantomData<P>,
+}
+
+impl<P: FieldParams> fmt::Debug for FiniteField<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
 }
 
 impl<P: FieldParams> FiniteField<P>

@@ -24,7 +24,7 @@ where
         for coeffs in key.iter_mut() {
             *coeffs = Vector::random(rng);
         }
-        key
+        Matrix(key)
     }
 
     // fn encrypt<'a>(key: Self::Key, text: &'a u8) -> impl Write {}

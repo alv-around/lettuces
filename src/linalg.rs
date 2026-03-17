@@ -6,10 +6,26 @@ use rand::{
 use crate::ff::{FieldParams, FiniteField};
 use core::ops::{Add, Mul, Rem, Sub};
 
-#[derive(Debug, Clone, Copy)]
-pub struct Vector<const N: usize, P: FieldParams>([FiniteField<P>; N]);
+#[derive(Clone, Copy)]
+pub struct Vector<const N: usize, P: FieldParams>(pub [FiniteField<P>; N]);
 
-pub type Matrix<const N: usize, P> = [Vector<N, P>; N];
+pub struct Matrix<const N: usize, P: FieldParams>(pub [Vector<N, P>; N]);
+
+impl<const N: usize, P: FieldParams> fmt::Debug for Matrix<N, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "[")?;
+        for vec in self.0.iter() {
+            writeln!(f, "{:?}", vec)?
+        }
+        writeln!(f, "]")
+    }
+}
+
+impl<const N: usize, P: FieldParams> fmt::Debug for Vector<N, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.0.iter()).finish()
+    }
+}
 
 impl<const N: usize, P: FieldParams> Vector<N, P>
 where
