@@ -1,4 +1,5 @@
 use core::fmt;
+use core::iter::Sum;
 use core::marker::PhantomData;
 use core::ops::{Add, Mul, Rem, Sub};
 use rand::Rng;
@@ -122,6 +123,15 @@ where
             value,
             _marker: PhantomData,
         }
+    }
+}
+
+impl<P: FieldParams> Sum for FiniteField<P>
+where
+    P::Repr: Add<Output = P::Repr> + Sub<Output = P::Repr> + Rem<Output = P::Repr>,
+{
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), |acc, x| acc + x)
     }
 }
 
