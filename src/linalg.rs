@@ -39,6 +39,20 @@ where
         }
         Self(rand_vals)
     }
+
+    // TODO: refactor
+    #[allow(non_snake_case)]
+    pub fn dot_product(self, A: Matrix<N, P>) -> Vector<N, P> {
+        let mut result = [FiniteField::zero(); N];
+        for (i, val) in result.iter_mut().enumerate() {
+            let mut vec = [FiniteField::zero(); N];
+            for (j, row) in A.0.iter().enumerate() {
+                vec[j] = self.0[j] * row.0[i];
+            }
+            *val = vec.into_iter().sum();
+        }
+        Vector(result)
+    }
 }
 
 impl<const N: usize, P> PartialEq for Vector<N, P>
@@ -80,17 +94,18 @@ where
         + Rem<Output = P::Repr>
         + Sub<Output = P::Repr>,
 {
-    type Output = FiniteField<P>;
+    type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut dot_product = FiniteField::<_>::zero();
-        for i in 0..N {
-            dot_product = dot_product + self.0[i] * rhs.0[i]
+        let mut product = [FiniteField::<P>::zero(); N];
+        for (i, val) in product.iter_mut().enumerate() {
+            *val = self.0[i] * rhs.0[i]
         }
-        dot_product
+        Vector(product)
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Matrix<const N: usize, P: FieldParams>(pub [Vector<N, P>; N]);
 
 impl<const N: usize, P: FieldParams> fmt::Debug for Matrix<N, P> {
@@ -106,7 +121,10 @@ impl<const N: usize, P: FieldParams> fmt::Debug for Matrix<N, P> {
 impl<const N: usize, P: FieldParams> Matrix<N, P>
 where
     P: FieldParams + PartialEq + Copy,
-    P::Repr: Add<Output = P::Repr> + Sub<Output = P::Repr> + Rem<Output = P::Repr>,
+    P::Repr: Add<Output = P::Repr>
+        + Sub<Output = P::Repr>
+        + Rem<Output = P::Repr>
+        + Mul<Output = P::Repr>,
     StandardUniform: Distribution<FiniteField<P>>,
 {
     pub fn random<R: Rng>(rng: &mut R) -> Self {
@@ -116,15 +134,25 @@ where
         }
         Matrix(key)
     }
+
+    pub fn dot_product(self, v: Vector<N, P>) -> Vector<N, P> {
+        let mut result = [FiniteField::zero(); N];
+        for (i, val) in self.0.into_iter().enumerate() {
+            result[i] = (val * v).0.into_iter().sum();
+        }
+        Vector(result)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ff::{KyberFp, KyberParams};
+    use rand::{SeedableRng, rngs::SmallRng};
 
     const ZEROES: [KyberFp; 4] = [KyberFp::zero(); 4];
     const KYBER_V: Vector<4, KyberParams> = Vector(ZEROES);
+    const KYBER_Q: u16 = KyberParams::MODULUS;
 
     #[test]
     fn test_vector() {
@@ -135,9 +163,18 @@ mod tests {
     #[test]
     fn test_vector_addition() {
         let array: Vector<4, KyberParams> = Vector::new([1, 2, 3, 4]);
-        let array_rev: Vector<_, KyberParams> = Vector::new([4, 3, 2, 1]);
+        let array_rev: Vector<_, KyberParams> =
+            Vector::new([KYBER_Q - 4, KYBER_Q - 3, KYBER_Q - 2, KYBER_Q - 1]);
         let sum = array + array_rev;
-        assert_eq!(sum, Vector::new([3, 1, 3, 1]));
+        assert_eq!(
+            sum,
+            Vector([
+                KyberFp::minus(3),
+                KyberFp::minus(1),
+                KyberFp::new(1),
+                KyberFp::new(3)
+            ])
+        );
     }
 
     #[test]
@@ -149,9 +186,28 @@ mod tests {
 
     #[test]
     fn test_vector_dot_product() {
-        let basis_vector_1 = Vector::new([1, 0]);
+        let basis_vector_1 = Vector::<_, KyberParams>::new([1, 0]);
         let basis_vector_2 = Vector::new([0, 1]);
 
-        assert_eq!(basis_vector_1 * basis_vector_2, KyberFp::zero());
+        assert_eq!(basis_vector_1 * basis_vector_2, Vector::new([0, 0]));
+    }
+
+    #[test]
+    fn test_diffie_hellmann() {
+        let mut rng = SmallRng::from_seed([0u8; 32]);
+        #[allow(non_snake_case)]
+        let A: Matrix<8, KyberParams> = Matrix::random(&mut rng);
+
+        // key for Alice
+        let s: Vector<8, KyberParams> = Vector::random(&mut rng);
+        let t = A.dot_product(s);
+
+        // key for Bob
+        let r: Vector<8, KyberParams> = Vector::random(&mut rng);
+        let u = r.dot_product(A);
+
+        let us: KyberFp = (u * s).0.into_iter().sum();
+        let rt: KyberFp = (r * t).0.into_iter().sum();
+        assert_eq!(us, rt);
     }
 }
